@@ -36,6 +36,10 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 {
 	//	rw_init(&zonesLock, name); /* TODO fix concurrency */
 	//rw_enter(&zonesLock, RW_READ | RW_WRITE);
+	if (suser(p)) {
+		*retval = -1;
+		return EPERM;
+	}
 	int scanner = 0; /* Used for scanning to find first non-used zone */
 	size_t done;
 	struct entry *n1, *np;
@@ -48,22 +52,35 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		printf("mallocing name failed\n");
 		return -1;
 	}
+	const char *temp = SCARG(uap, zonename);
+	if (temp == 0) {
+		*retval = -1;
+		return EFAULT;
+	}
        	copyinstr(SCARG(uap, zonename), (void *)name, MAXZONENAMELEN + 1, &done);
+	if (strlen(name) > MAXZONENAMELEN) {
+		*retval = -1;
+		return ENAMETOOLONG;
+	}
 #ifdef DEBUG
 	printf("%s! %d, %d\n", __func__, scanner, MAXZONENAMELEN);
 	printf("adding zone with name: %s\n", name);
 #endif
-        if ((n1 = malloc(sizeof(struct entry), M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
+        if ((n1 = malloc(sizeof(struct entry), M_TEMP, 
+	    M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
 		printf("mallocing new zone failed\n");
 		return -1;
 	}
+	n1->zone_name = (char *)malloc(strlen(name) + 1, M_TEMP, 
+	    M_WAITOK | M_CANFAIL | M_ZERO);
 	if (TAILQ_EMPTY(&zones)) {
 		n1->id = scanner;
-		strncpy(n1->zone_name, name, strlen(name));
+		strncpy(n1->zone_name, name, strlen(name) + 1);
 		TAILQ_INSERT_HEAD(&zones, n1, entries);
 		goto inserted;
 	}
 	TAILQ_FOREACH(np, &zones, entries) {
+		printf("np->zone_name: %s, name: %s\n", np->zone_name, name);
 		if (!strcmp(np->zone_name, name)) {
 			printf("name already in use!\n");
 			*retval = -1;
@@ -73,7 +90,7 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 			continue;
 		if (np->id != scanner) {
 			n1->id = scanner;
-			strncpy(n1->zone_name, name, strlen(name));
+			strncpy(n1->zone_name, name, strlen(name) + 1);
 			TAILQ_INSERT_BEFORE(np, n1, entries);
 			*retval = (zoneid_t)scanner;
 			scanner = -1;
@@ -81,19 +98,24 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		}
 		scanner++;
 	}
-	if (scanner > MAXZONES) {
+	if (scanner >= MAXZONES) {
 		*retval = -1;
 		return ERANGE;
 	}
 	if (scanner != -1) {
 		n1->id = scanner;
+		strncpy(n1->zone_name, name, strlen(name) + 1);
 		TAILQ_INSERT_TAIL(&zones, n1, entries);
 	}
 inserted:
-	printf("scanner: %d\n", scanner);
+#ifdef DEBUG
+	{
 	struct entry *np2;
+	printf("scanner: %d\n", scanner);
 	TAILQ_FOREACH(np2, &zones, entries)
 		printf("%d\n", np2->id);
+	}
+#endif 
 	//rw_exit(&zonesLock);
 	return(0);
 }
@@ -101,7 +123,28 @@ inserted:
 int
 sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 {
+	if (suser(p)) {
+		*retval = -1;
+		return EPERM;
+	}
+	struct entry *np;
+	struct sys_zone_destroy_args /* {
+		syscallarg(zoneid_t)z;
+	} */	*uap = v;
+	zoneid_t arg = SCARG(uap, z);
+	int found = 0;
 	printf("%s!\n", __func__);
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == arg) {
+			TAILQ_REMOVE(&zones, np, entries);
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		*retval = -1;
+		return ESRCH;
+	}
 	return(0);
 }
 
