@@ -164,15 +164,34 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 		syscallarg(zoneid_t *)	zs;
 		syscallarg(size_t *)	nzs;
 	} */ 	*uap = v;
+	int counter = 0;
+	struct entry *np;
 	size_t *nzsInput = malloc(sizeof(size_t),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
         if (copyin(SCARG(uap, nzs), nzsInput, sizeof(size_t)) == EFAULT) {
 		*retval = -1;
 		return EFAULT;
 	}
+	zoneid_t *zsOutput = malloc(sizeof(zoneid_t) * (*nzsInput),
+	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
 	printf("1\n");
 	printf("nzsInput: %zu\n", *nzsInput);
-	
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (counter >= *nzsInput) {
+			printf("YEET %d, %zu\n", counter, *nzsInput);
+			*retval = -1;
+			return ERANGE;
+		}
+		zsOutput[counter] = np->id;
+		printf("Adding %d\n", counter);
+		counter++;
+	}
+	printf("Done adding\n");
+	if (copyout(zsOutput, SCARG(uap, zs), sizeof(zoneid_t) * counter)
+	    == EFAULT) {
+		*retval = -1;
+		return EFAULT;
+	}
 	return(0);
 }
 
