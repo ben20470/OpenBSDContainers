@@ -159,6 +159,20 @@ int
 sys_zone_list(struct proc *p, void *v, register_t *retval)
 {
 	printf("%s!\n", __func__);
+	/* TODO handle non-global zone */
+	struct sys_zone_list_args /* {
+		syscallarg(zoneid_t *)	zs;
+		syscallarg(size_t *)	nzs;
+	} */ 	*uap = v;
+	size_t *nzsInput = malloc(sizeof(size_t),
+	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
+        if (copyin(SCARG(uap, nzs), nzsInput, sizeof(size_t)) == EFAULT) {
+		*retval = -1;
+		return EFAULT;
+	}
+	printf("1\n");
+	printf("nzsInput: %zu\n", *nzsInput);
+	
 	return(0);
 }
 
