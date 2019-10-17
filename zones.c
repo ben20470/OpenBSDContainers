@@ -16,14 +16,24 @@
 #include <sys/pool.h>
 #include <sys/syscallargs.h>
 
-#define DEBUG 1
+#define GLOBAL -1
+#define DNAME 1
+
 
 struct rwlock zonesLock;
 const char *name = "zonesLock";
 
+struct proc_entry {
+	struct proc *p;
+	SLIST_ENTRY(proc_entry) proc_entries;
+};
+SLIST_HEAD(proc_list, proc_entry);
+struct proc_entry *f;
+
 struct entry {
 	zoneid_t id; /* one particular zone id */
 	char *zone_name;
+	struct proc_list procs;
 	TAILQ_ENTRY(entry) entries;
 };
 TAILQ_HEAD(zone_list, entry);
@@ -36,7 +46,7 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 {
 	//	rw_init(&zonesLock, name); /* TODO fix concurrency */
 	//rw_enter(&zonesLock, RW_READ | RW_WRITE);
-	if (suser(p)) {
+	if (suser(p) || (p->p_p->zone != GLOBAL)) {
 		*retval = -1;
 		return EPERM;
 	}
@@ -52,17 +62,13 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		printf("mallocing name failed\n");
 		return -1;
 	}
-	const char *temp = SCARG(uap, zonename);
-	if (temp == 0) {
-		*retval = -1;
-		return EFAULT;
-	}
-       	copyinstr(SCARG(uap, zonename), (void *)name, MAXZONENAMELEN + 1, &done);
+       	copyinstr(SCARG(uap, zonename), (void *)name, 
+	    MAXZONENAMELEN + 1, &done);
 	if (strlen(name) > MAXZONENAMELEN) {
 		*retval = -1;
 		return ENAMETOOLONG;
 	}
-#ifdef DEBUG
+#ifdef DCREATE
 	printf("%s! %d, %d\n", __func__, scanner, MAXZONENAMELEN);
 	printf("adding zone with name: %s\n", name);
 #endif
@@ -71,6 +77,8 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		printf("mallocing new zone failed\n");
 		return -1;
 	}
+	struct proc_list procs = SLIST_HEAD_INITIALIZER(procs);
+	n1->procs = procs;
 	n1->zone_name = (char *)malloc(strlen(name) + 1, M_TEMP, 
 	    M_WAITOK | M_CANFAIL | M_ZERO);
 	if (TAILQ_EMPTY(&zones)) {
@@ -80,9 +88,13 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		goto inserted;
 	}
 	TAILQ_FOREACH(np, &zones, entries) {
+#ifdef DCREATE
 		printf("np->zone_name: %s, name: %s\n", np->zone_name, name);
+#endif
 		if (!strcmp(np->zone_name, name)) {
+#ifdef DCREATE
 			printf("name already in use!\n");
+#endif
 			*retval = -1;
 			return EEXIST;
 		}
@@ -106,9 +118,10 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		n1->id = scanner;
 		strncpy(n1->zone_name, name, strlen(name) + 1);
 		TAILQ_INSERT_TAIL(&zones, n1, entries);
+		*retval = scanner;
 	}
 inserted:
-#ifdef DEBUG
+#ifdef DCREATE
 	{
 	struct entry *np2;
 	printf("scanner: %d\n", scanner);
@@ -123,7 +136,7 @@ inserted:
 int
 sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 {
-	if (suser(p)) {
+	if (suser(p) || (p->p_p->zone != GLOBAL)) {
 		*retval = -1;
 		return EPERM;
 	}
@@ -132,10 +145,20 @@ sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 		syscallarg(zoneid_t)z;
 	} */	*uap = v;
 	zoneid_t arg = SCARG(uap, z);
+	if (arg == GLOBAL) {
+		*retval = -1;
+		return EBUSY;
+	}
 	int found = 0;
+#ifdef DDEST
 	printf("%s!\n", __func__);
+#endif
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (np->id == arg) {
+			if (SLIST_EMPTY(&np->procs)) {
+				*retval = -1;
+				return EBUSY;
+			}
 			TAILQ_REMOVE(&zones, np, entries);
 			found = 1;
 			break;
@@ -152,13 +175,39 @@ int
 sys_zone_enter(struct proc *p, void *v, register_t *retval)
 {
 	printf("%s!\n", __func__);
-	return(0);
+	if (suser(p) || (p->p_p->zone != GLOBAL)) {
+		*retval = -1;
+		return EPERM;
+	}
+	struct sys_zone_enter_args /* {
+		syscallarg(zoneid_t)	z;
+	} */ 	*uap = v;
+	zoneid_t zone = SCARG(uap, z);
+	struct entry *np;
+	struct proc_entry *new;
+        if ((new = malloc(sizeof(struct proc_entry), M_TEMP, 
+	    M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
+		printf("mallocing new zone failed\n");
+		return -1;
+	}
+	new->p = p;
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == zone) {
+			SLIST_INSERT_HEAD(&np->procs, new, proc_entries);
+			*retval = 0;
+			return 0;
+		}
+	}
+	*retval = -1;
+	return ESRCH;
 }
 
 int
 sys_zone_list(struct proc *p, void *v, register_t *retval)
 {
+#ifdef DLIST
 	printf("%s!\n", __func__);
+#endif
 	/* TODO handle non-global zone */
 	struct sys_zone_list_args /* {
 		syscallarg(zoneid_t *)	zs;
@@ -174,21 +223,26 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 	}
 	zoneid_t *zsOutput = malloc(sizeof(zoneid_t) * (*nzsInput),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
-	printf("1\n");
-	printf("nzsInput: %zu\n", *nzsInput);
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (counter >= *nzsInput) {
-			printf("YEET %d, %zu\n", counter, *nzsInput);
+#ifdef DLIST
+			printf("nzs is less than number of zones \
+			    number of zones:%d, nzs:%zu\n", counter, *nzsInput);
+#endif
 			*retval = -1;
 			return ERANGE;
 		}
 		zsOutput[counter] = np->id;
+#ifdef DLIST
 		printf("Adding %d\n", counter);
+#endif
 		counter++;
 	}
-	printf("Done adding\n");
 	if (copyout(zsOutput, SCARG(uap, zs), sizeof(zoneid_t) * counter)
 	    == EFAULT) {
+#ifdef DLIST
+		printf("copyout failed in zone_list\n");
+#endif
 		*retval = -1;
 		return EFAULT;
 	}
@@ -198,13 +252,87 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 int
 sys_zone_name(struct proc *p, void *v, register_t *retval)
 {
+	/* TODO -1 if current zone, non-global zones */
+	int error;
+	zoneid_t zoneID;
+	size_t namelen;
+	struct entry *np;
+	struct sys_zone_name_args /* {
+		syscallarg(zoneid_t)	z;
+		syscallarg(char *)	name;
+		syscallarg(size_t) 	namelen;
+	} */	*uap = v;
+	zoneID = SCARG(uap, z);
+	namelen = SCARG(uap, namelen);
+#ifdef DNAME
 	printf("%s!\n", __func__);
-	return(0);
+	printf("zoneID:%d\n", zoneID);
+	printf("namelen:%zu\n", namelen);
+#endif
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == zoneID) {
+			if (strlen(np->zone_name) > namelen) {
+#ifdef DNAME
+				printf("len of zone_name:%zu\n",
+				    strlen(np->zone_name));
+				printf("namelen:%zu\n", namelen);
+#endif
+				*retval = -1;
+				return ENAMETOOLONG;
+			}
+			error = copyoutstr(np->zone_name, SCARG(uap, name),
+			    strlen(np->zone_name) + 1, NULL);
+			if (error) {
+				*retval = -1;
+				return error;
+			}
+			*retval = 0;
+			return 0;
+		}
+	}
+	*retval = -1;
+	return ESRCH;
 }
 
 int
 sys_zone_lookup(struct proc *p, void *v, register_t *retval)
 {
+	struct entry *np;
+	int error;
+	struct sys_zone_lookup_args /* {
+		syscallarg(const char *) name;
+	} */ 	*uap = v;
+	char *name;
+	if ((name = malloc(sizeof(char) * MAXZONENAMELEN + 1, 
+	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
+		printf("mallocing name failed in lookup\n");
+		return -1;
+	}
+       	error = copyinstr(SCARG(uap, name), (void *)name, 
+	    MAXZONENAMELEN + 1, NULL);
+	if (error ==  ENAMETOOLONG) {
+#ifdef DLOOK
+		printf("enametoolong in lookup\n");
+#endif
+		*retval = -1;
+		return ENAMETOOLONG;
+	} else if (error == EFAULT) {
+#ifdef DLOOK
+		printf("efault in lookup\n");
+#endif
+		*retval = -1;
+		return EFAULT;
+	}
+#ifdef DLOOK
 	printf("%s!\n", __func__);
-	return(0);
+	printf("name given:%s.\n", name);
+#endif
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (!strcmp(np->zone_name, name)) {
+			*retval = np->id;
+			return 0;
+		}
+	}
+	*retval = -1;
+	return(ESRCH);
 }
