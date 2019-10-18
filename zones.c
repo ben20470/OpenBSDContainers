@@ -17,8 +17,7 @@
 #include <sys/syscallargs.h>
 
 #define GLOBAL -1
-#define DCREATE 1
-#define DDEST 1
+#define DLIST 1
 
 
 struct rwlock zonesLock;
@@ -55,7 +54,7 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 #endif
 		return EPERM;
 	}
-	int scanner = 0; /* Used for scanning to find first non-used zone */
+	int scanner = 1; /* Used for scanning to find first non-used zone */
 	struct entry *n1, *np;
 	struct sys_zone_create_args /* {
 		syscallarg(const char *)zonename;
@@ -121,7 +120,7 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		}
 		scanner++;
 	}
-	if (scanner >= MAXZONES) {
+	if (scanner > MAXZONES) {
 		*retval = -1;
 		return ERANGE;
 	}
@@ -240,12 +239,19 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 	struct entry *np;
 	size_t *nzsInput = malloc(sizeof(size_t),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
+
+	/* Grab size of zs */
         if (copyin(SCARG(uap, nzs), nzsInput, sizeof(size_t)) == EFAULT) {
+#ifdef DLIST
+		printf("copyin failed\n");
+#endif
 		*retval = -1;
 		return EFAULT;
 	}
+
 	zoneid_t *zsOutput = malloc(sizeof(zoneid_t) * (*nzsInput),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
+	zsOutput[counter++] = 0;
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (counter >= *nzsInput) {
 #ifdef DLIST
@@ -269,6 +275,15 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 		*retval = -1;
 		return EFAULT;
 	}
+	if (copyout(&counter, SCARG(uap, nzs), sizeof(size_t))
+	    == EFAULT) {
+#ifdef DLIST
+		printf("copyout failed in zone_list2\n");
+#endif
+		*retval = -1;
+		return EFAULT;
+	}
+	*retval = 0;
 	return(0);
 }
 
@@ -310,6 +325,17 @@ sys_zone_name(struct proc *p, void *v, register_t *retval)
 	} */	*uap = v;
 	zoneID = SCARG(uap, z);
 	namelen = SCARG(uap, namelen);
+	if (!zoneID) {
+		/* Global zone */
+		error = copyoutstr("global", SCARG(uap, name), 
+		    strlen("global") + 1, NULL);
+		if (error) {
+			*retval = -1;
+			return error;
+		}
+		*retval = 0;
+		return 0;
+	}
 #ifdef DNAME
 	printf("%s!\n", __func__);
 	printf("zoneID:%d\n", zoneID);
@@ -373,6 +399,10 @@ sys_zone_lookup(struct proc *p, void *v, register_t *retval)
 	printf("%s!\n", __func__);
 	printf("name given:%s.\n", name);
 #endif
+	if (!strcmp(name, "global")) {
+		*retval = np->id;
+		return 0;
+	}
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (!strcmp(np->zone_name, name)) {
 			*retval = np->id;
