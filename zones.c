@@ -17,14 +17,15 @@
 #include <sys/syscallargs.h>
 
 #define GLOBAL -1
-#define DNAME 1
+#define DCREATE 1
+#define DDEST 1
 
 
 struct rwlock zonesLock;
 const char *name = "zonesLock";
 
 struct proc_entry {
-	struct proc *p;
+	pid_t pid;
 	SLIST_ENTRY(proc_entry) proc_entries;
 };
 SLIST_HEAD(proc_list, proc_entry);
@@ -46,16 +47,21 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 {
 	//	rw_init(&zonesLock, name); /* TODO fix concurrency */
 	//rw_enter(&zonesLock, RW_READ | RW_WRITE);
+
+	/* Zones can only be created root in global zone */
 	if (suser(p) || (p->p_p->zone != GLOBAL)) {
+#ifdef DCREATE
 		*retval = -1;
+#endif
 		return EPERM;
 	}
 	int scanner = 0; /* Used for scanning to find first non-used zone */
-	size_t done;
 	struct entry *n1, *np;
 	struct sys_zone_create_args /* {
 		syscallarg(const char *)zonename;
 	} */	*uap = v;
+
+	/* Get new zone's name */
 	char *name;
 	if ((name = malloc(sizeof(char) * MAXZONENAMELEN + 1, 
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
@@ -63,11 +69,12 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		return -1;
 	}
        	copyinstr(SCARG(uap, zonename), (void *)name, 
-	    MAXZONENAMELEN + 1, &done);
+	    MAXZONENAMELEN + 1, NULL);
 	if (strlen(name) > MAXZONENAMELEN) {
 		*retval = -1;
 		return ENAMETOOLONG;
 	}
+
 #ifdef DCREATE
 	printf("%s! %d, %d\n", __func__, scanner, MAXZONENAMELEN);
 	printf("adding zone with name: %s\n", name);
@@ -81,12 +88,16 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 	n1->procs = procs;
 	n1->zone_name = (char *)malloc(strlen(name) + 1, M_TEMP, 
 	    M_WAITOK | M_CANFAIL | M_ZERO);
+
 	if (TAILQ_EMPTY(&zones)) {
+		/* If there are no non-global zones, insert first one */
 		n1->id = scanner;
 		strncpy(n1->zone_name, name, strlen(name) + 1);
 		TAILQ_INSERT_HEAD(&zones, n1, entries);
 		goto inserted;
 	}
+
+	/* Iterate through until there is a missing zone id */
 	TAILQ_FOREACH(np, &zones, entries) {
 #ifdef DCREATE
 		printf("np->zone_name: %s, name: %s\n", np->zone_name, name);
@@ -114,6 +125,7 @@ sys_zone_create(struct proc *p, void *v, register_t *retval)
 		*retval = -1;
 		return ERANGE;
 	}
+	/* If a zone wasn't added, one needs to be added to tail */
 	if (scanner != -1) {
 		n1->id = scanner;
 		strncpy(n1->zone_name, name, strlen(name) + 1);
@@ -136,29 +148,39 @@ inserted:
 int
 sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 {
+	/* Zones can only be destroyed by root in global zone */
 	if (suser(p) || (p->p_p->zone != GLOBAL)) {
 		*retval = -1;
 		return EPERM;
 	}
 	struct entry *np;
+	struct proc_entry *proc;
 	struct sys_zone_destroy_args /* {
 		syscallarg(zoneid_t)z;
 	} */	*uap = v;
 	zoneid_t arg = SCARG(uap, z);
+
+	/* Global zone can't be deleted */
 	if (arg == GLOBAL) {
 		*retval = -1;
 		return EBUSY;
 	}
 	int found = 0;
+
 #ifdef DDEST
 	printf("%s!\n", __func__);
 #endif
+
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (np->id == arg) {
-			if (SLIST_EMPTY(&np->procs)) {
-				*retval = -1;
-				return EBUSY;
+			/* Found zone to destroy, check if still in use */
+			if (!SLIST_EMPTY(&np->procs)) {
+				SLIST_FOREACH(proc, &np->procs, proc_entries) {
+				}
 			}
+#ifdef DDEST
+			printf("destroying zone with id: %d\n", np->id);
+#endif
 			TAILQ_REMOVE(&zones, np, entries);
 			found = 1;
 			break;
@@ -190,7 +212,7 @@ sys_zone_enter(struct proc *p, void *v, register_t *retval)
 		printf("mallocing new zone failed\n");
 		return -1;
 	}
-	new->p = p;
+	new->pid = p->p_p->ps_pid;
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (np->id == zone) {
 			SLIST_INSERT_HEAD(&np->procs, new, proc_entries);
@@ -198,6 +220,7 @@ sys_zone_enter(struct proc *p, void *v, register_t *retval)
 			return 0;
 		}
 	}
+	p->p_p->zone = zone;
 	*retval = -1;
 	return ESRCH;
 }
@@ -247,6 +270,29 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 		return EFAULT;
 	}
 	return(0);
+}
+
+
+int
+zone_name(zoneid_t z, char *name, size_t namelen)
+{
+	zoneid_t zoneID = z;
+	struct entry *np;
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == zoneID) {
+			if (strlen(np->zone_name) > namelen) {
+#ifdef DNAME
+				printf("len of zone_name:%zu\n",
+				    strlen(np->zone_name));
+				printf("namelen:%zu\n", namelen);
+#endif
+				return ENAMETOOLONG;
+			}
+			strncpy(name, np->zone_name, namelen);
+			return 0;
+		}
+	}
+	return ESRCH;
 }
 
 int
