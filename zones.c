@@ -16,7 +16,7 @@
 #include <sys/pool.h>
 #include <sys/syscallargs.h>
 
-#define GLOBAL -1
+#define GLOBAL 0
 #define DLIST 1
 
 
@@ -153,7 +153,6 @@ sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 		return EPERM;
 	}
 	struct entry *np;
-	struct proc_entry *proc;
 	struct sys_zone_destroy_args /* {
 		syscallarg(zoneid_t)z;
 	} */	*uap = v;
@@ -174,8 +173,8 @@ sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 		if (np->id == arg) {
 			/* Found zone to destroy, check if still in use */
 			if (!SLIST_EMPTY(&np->procs)) {
-				SLIST_FOREACH(proc, &np->procs, proc_entries) {
-				}
+				*retval = -1;
+				return EBUSY;
 			}
 #ifdef DDEST
 			printf("destroying zone with id: %d\n", np->id);
@@ -191,6 +190,55 @@ sys_zone_destroy(struct proc *p, void *v, register_t *retval)
 	}
 	return(0);
 }
+
+
+int
+zone_enter(pid_t pid, zoneid_t zone)
+{
+	struct entry *np;
+	struct proc_entry *new;
+        if ((new = malloc(sizeof(struct proc_entry), M_TEMP, 
+	    M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
+		printf("mallocing new zone failed\n");
+		return -1;
+	}
+	new->pid = pid;
+	if (pid == GLOBAL) {
+		return 0;
+	}
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == zone) {
+			printf("adding pid: %d to zone: %d\n", new->pid, zone);
+			SLIST_INSERT_HEAD(&np->procs, new, proc_entries);
+			return 0;
+		}
+	}
+	return ESRCH;
+}
+
+
+int
+zone_exit(pid_t pid, zoneid_t zone)
+{
+	struct entry *np;
+	if (zone == GLOBAL) {
+		printf("global zone\n");
+		return 0;
+	}
+	printf("exiting like uhh yeet pid:%d: zone:%d:\n", pid, zone);
+	TAILQ_FOREACH(np, &zones, entries) {
+		if (np->id == zone) {
+			printf("removing from np->id%d\n", np->id);
+			if (SLIST_EMPTY(&np->procs))
+				return 0;
+			SLIST_REMOVE_HEAD(&np->procs, proc_entries);
+			return 0;
+		}
+		printf("np->id:%d\n", np->id);
+	}
+	return ESRCH;
+}
+	
 
 int
 sys_zone_enter(struct proc *p, void *v, register_t *retval)
@@ -212,14 +260,15 @@ sys_zone_enter(struct proc *p, void *v, register_t *retval)
 		return -1;
 	}
 	new->pid = p->p_p->ps_pid;
+	p->p_p->zone = zone;
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (np->id == zone) {
+			printf("adding to slist\n");
 			SLIST_INSERT_HEAD(&np->procs, new, proc_entries);
 			*retval = 0;
 			return 0;
 		}
 	}
-	p->p_p->zone = zone;
 	*retval = -1;
 	return ESRCH;
 }
