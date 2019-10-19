@@ -19,7 +19,6 @@
 #define GLOBAL 0
 #define DLIST 1
 
-
 struct rwlock zonesLock;
 const char *name = "zonesLock";
 
