@@ -17,7 +17,7 @@
 #include <sys/syscallargs.h>
 
 #define GLOBAL 0
-#define DLIST 1
+#define DLOOK 1
 
 struct rwlock zonesLock;
 const char *name = "zonesLock";
@@ -373,11 +373,14 @@ sys_zone_name(struct proc *p, void *v, register_t *retval)
 	} */	*uap = v;
 	zoneID = SCARG(uap, z);
 	namelen = SCARG(uap, namelen);
+	if (zoneID == -1)
+		zoneID = p->p_p->zone;
 	if (!zoneID) {
 		/* Global zone */
 		error = copyoutstr("global", SCARG(uap, name), 
 		    strlen("global") + 1, NULL);
 		if (error) {
+			printf("name uhh GLOBAL NAME\n");
 			*retval = -1;
 			return error;
 		}
