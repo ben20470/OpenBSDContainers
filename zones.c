@@ -17,7 +17,7 @@
 #include <sys/syscallargs.h>
 
 #define GLOBAL 0
-#define DLOOK 1
+#define DNAME 1
 
 struct rwlock zonesLock;
 const char *name = "zonesLock";
@@ -283,10 +283,10 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 		syscallarg(zoneid_t *)	zs;
 		syscallarg(size_t *)	nzs;
 	} */ 	*uap = v;
-	int counter = 0;
 	struct entry *np;
 	size_t *nzsInput = malloc(sizeof(size_t),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
+	size_t nzsOutput = 0;
 
 	/* Grab size of zs */
         if (copyin(SCARG(uap, nzs), nzsInput, sizeof(size_t)) == EFAULT) {
@@ -299,23 +299,38 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 
 	zoneid_t *zsOutput = malloc(sizeof(zoneid_t) * (*nzsInput),
 	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO);
-	zsOutput[counter++] = 0;
+	if (!p->p_p->zone) {
+		printf("not good\n");
+		zsOutput[nzsOutput++] = 0;
+	}
+
 	TAILQ_FOREACH(np, &zones, entries) {
-		if (counter >= *nzsInput) {
+		if (nzsOutput >= *nzsInput) {
 #ifdef DLIST
 			printf("nzs is less than number of zones \
-			    number of zones:%d, nzs:%zu\n", counter, *nzsInput);
+			    number of zones:%d, nzs:%zu\n", nzsOutput, *nzsInput);
 #endif
 			*retval = -1;
 			return ERANGE;
 		}
-		zsOutput[counter] = np->id;
+		if (np->id == p->p_p->zone && p->p_p->zone) {
+			zsOutput[0] = np->id;
+			printf("poop jeff %d\n", np->id);
+			*retval = 0;
+			nzsOutput = 1;
+			goto copyNzs;
+		}
+		if (!p->p_p->zone) {
+			printf("namejeff\n");
+			zsOutput[nzsOutput] = np->id;
 #ifdef DLIST
-		printf("Adding %d\n", counter);
+			printf("Adding %d\n", nzsOutput);
 #endif
-		counter++;
+			nzsOutput++;
+		}
 	}
-	if (copyout(zsOutput, SCARG(uap, zs), sizeof(zoneid_t) * counter)
+copyNzs:
+	if (copyout(zsOutput, SCARG(uap, zs), sizeof(zoneid_t) * nzsOutput)
 	    == EFAULT) {
 #ifdef DLIST
 		printf("copyout failed in zone_list\n");
@@ -323,8 +338,9 @@ sys_zone_list(struct proc *p, void *v, register_t *retval)
 		*retval = -1;
 		return EFAULT;
 	}
-	if (copyout(&counter, SCARG(uap, nzs), sizeof(size_t))
-	    == EFAULT) {
+	printf("copying out nzsOuptut: %zu\n", nzsOutput);
+	printf("current zone: %d\n", p->p_p->zone);
+	if (copyout(&nzsOutput, SCARG(uap, nzs), sizeof(size_t))){
 #ifdef DLIST
 		printf("copyout failed in zone_list2\n");
 #endif
@@ -375,10 +391,18 @@ sys_zone_name(struct proc *p, void *v, register_t *retval)
 	namelen = SCARG(uap, namelen);
 	if (zoneID == -1)
 		zoneID = p->p_p->zone;
+
+	if (p->p_p->zone && zoneID != p->p_p->zone) {
+		*retval = -1;
+		printf("11111111\n");
+		return ESRCH;
+	}
+
 	if (!zoneID) {
 		/* Global zone */
 		error = copyoutstr("global", SCARG(uap, name), 
 		    strlen("global") + 1, NULL);
+		printf("2222222\n");
 		if (error) {
 			printf("name uhh GLOBAL NAME\n");
 			*retval = -1;
@@ -456,6 +480,8 @@ sys_zone_lookup(struct proc *p, void *v, register_t *retval)
 	}
 	TAILQ_FOREACH(np, &zones, entries) {
 		if (!strcmp(np->zone_name, name)) {
+			if (p->p_p->zone && np->id != p->p_p->zone)
+				break;
 			*retval = np->id;
 			return 0;
 		}
