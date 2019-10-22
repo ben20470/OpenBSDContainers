@@ -1,3 +1,4 @@
+? submission.diff
 ? test.diff
 Index: conf/files
 ===================================================================
@@ -5,7 +6,7 @@ RCS file: /cvs/src/sys/conf/files,v
 retrieving revision 1.675
 diff -u -p -u -p -r1.675 files
 --- conf/files	5 Oct 2019 05:33:14 -0000	1.675
-+++ conf/files	21 Oct 2019 01:24:52 -0000
++++ conf/files	22 Oct 2019 06:50:42 -0000
 @@ -615,6 +615,7 @@ file	dev/kcov.c			kcov	needs-flag
  # XXX machine-independent SCSI files should live somewhere here, maybe
  
@@ -20,7 +21,7 @@ RCS file: /cvs/src/sys/kern/init_main.c,v
 retrieving revision 1.290
 diff -u -p -u -p -r1.290 init_main.c
 --- kern/init_main.c	21 Jun 2019 09:39:48 -0000	1.290
-+++ kern/init_main.c	21 Oct 2019 01:24:53 -0000
++++ kern/init_main.c	22 Oct 2019 06:50:42 -0000
 @@ -38,6 +38,7 @@
   *	@(#)init_main.c	8.9 (Berkeley) 1/21/94
   */
@@ -45,7 +46,7 @@ RCS file: /cvs/src/sys/kern/init_sysent.c,v
 retrieving revision 1.208
 diff -u -p -u -p -r1.208 init_sysent.c
 --- kern/init_sysent.c	13 Aug 2019 07:10:30 -0000	1.208
-+++ kern/init_sysent.c	21 Oct 2019 01:24:53 -0000
++++ kern/init_sysent.c	22 Oct 2019 06:50:42 -0000
 @@ -1,4 +1,4 @@
 -/*	$OpenBSD: init_sysent.c,v 1.208 2019/08/13 07:10:30 anton Exp $	*/
 +/*	$OpenBSD$	*/
@@ -76,7 +77,7 @@ RCS file: /cvs/src/sys/kern/kern_exit.c,v
 retrieving revision 1.178
 diff -u -p -u -p -r1.178 kern_exit.c
 --- kern/kern_exit.c	21 Jun 2019 09:39:48 -0000	1.178
-+++ kern/kern_exit.c	21 Oct 2019 01:24:53 -0000
++++ kern/kern_exit.c	22 Oct 2019 06:50:42 -0000
 @@ -60,6 +60,7 @@
  #include <sys/pool.h>
  #include <sys/mutex.h>
@@ -89,7 +90,7 @@ diff -u -p -u -p -r1.178 kern_exit.c
  		p->p_limit = NULL;
  		lim_free(limit);
  	}
-+	printf("exiting~!!! with pid:%d. and zone:%d.\n", pr->ps_pid, pr->zone);
++	//printf("exiting~!!! with pid:%d. and zone:%d.\n", pr->ps_pid, pr->zone);
 +	zone_exit(pr->ps_pid, pr->zone);
  
  	/*
@@ -100,7 +101,7 @@ RCS file: /cvs/src/sys/kern/kern_fork.c,v
 retrieving revision 1.213
 diff -u -p -u -p -r1.213 kern_fork.c
 --- kern/kern_fork.c	21 Jun 2019 09:39:48 -0000	1.213
-+++ kern/kern_fork.c	21 Oct 2019 01:24:53 -0000
++++ kern/kern_fork.c	22 Oct 2019 06:50:42 -0000
 @@ -240,10 +240,18 @@ process_new(struct proc *p, struct proce
  
  	process_initialize(pr, p);
@@ -126,14 +127,14 @@ RCS file: /cvs/src/sys/kern/kern_pledge.c,v
 retrieving revision 1.255
 diff -u -p -u -p -r1.255 kern_pledge.c
 --- kern/kern_pledge.c	25 Aug 2019 18:46:40 -0000	1.255
-+++ kern/kern_pledge.c	21 Oct 2019 01:24:53 -0000
++++ kern/kern_pledge.c	22 Oct 2019 06:50:42 -0000
 @@ -364,6 +364,9 @@ const uint64_t pledge_syscalls[SYS_MAXSY
  	[SYS_flock] = PLEDGE_FLOCK | PLEDGE_YPACTIVE,
  
  	[SYS_swapctl] = PLEDGE_VMINFO,	/* XXX should limit to "get" operations */
 +
-+	/* [SYS_zone_name] = PLEDGE_ALWAYS, */
-+	/* [SYS_zone_lookup] = PLEDGE_ALWAYS, */
++	[SYS_zone_name] = PLEDGE_ALWAYS,
++	[SYS_zone_lookup] = PLEDGE_ALWAYS,
  };
  
  static const struct {
@@ -143,7 +144,7 @@ RCS file: /cvs/src/sys/kern/kern_sig.c,v
 retrieving revision 1.235
 diff -u -p -u -p -r1.235 kern_sig.c
 --- kern/kern_sig.c	6 Oct 2019 16:24:14 -0000	1.235
-+++ kern/kern_sig.c	21 Oct 2019 01:24:53 -0000
++++ kern/kern_sig.c	22 Oct 2019 06:50:42 -0000
 @@ -139,6 +139,9 @@ cansignal(struct proc *p, struct process
  		return (0);
  	}
@@ -160,7 +161,7 @@ RCS file: /cvs/src/sys/kern/kern_sysctl.c,v
 retrieving revision 1.366
 diff -u -p -u -p -r1.366 kern_sysctl.c
 --- kern/kern_sysctl.c	21 Aug 2019 20:44:09 -0000	1.366
-+++ kern/kern_sysctl.c	21 Oct 2019 01:24:53 -0000
++++ kern/kern_sysctl.c	22 Oct 2019 06:50:42 -0000
 @@ -80,6 +80,8 @@
  #include <sys/mount.h>
  #include <sys/syscallargs.h>
@@ -196,7 +197,7 @@ RCS file: /cvs/src/sys/kern/syscalls.c,v
 retrieving revision 1.207
 diff -u -p -u -p -r1.207 syscalls.c
 --- kern/syscalls.c	13 Aug 2019 07:10:30 -0000	1.207
-+++ kern/syscalls.c	21 Oct 2019 01:24:53 -0000
++++ kern/syscalls.c	22 Oct 2019 06:50:42 -0000
 @@ -1,4 +1,4 @@
 -/*	$OpenBSD: syscalls.c,v 1.207 2019/08/13 07:10:30 anton Exp $	*/
 +/*	$OpenBSD$	*/
@@ -220,7 +221,7 @@ RCS file: /cvs/src/sys/kern/syscalls.master,v
 retrieving revision 1.197
 diff -u -p -u -p -r1.197 syscalls.master
 --- kern/syscalls.master	13 Aug 2019 07:09:21 -0000	1.197
-+++ kern/syscalls.master	21 Oct 2019 01:24:53 -0000
++++ kern/syscalls.master	22 Oct 2019 06:50:42 -0000
 @@ -566,3 +566,9 @@
  328	OBSOL		__tfork51
  329	STD NOLOCK	{ void sys___set_tcb(void *tcb); }
@@ -236,8 +237,8 @@ Index: kern/zones.c
 RCS file: kern/zones.c
 diff -N kern/zones.c
 --- /dev/null	1 Jan 1970 00:00:00 -0000
-+++ kern/zones.c	21 Oct 2019 01:24:53 -0000
-@@ -0,0 +1,491 @@
++++ kern/zones.c	22 Oct 2019 06:50:42 -0000
+@@ -0,0 +1,494 @@
 +#include <lib/libkern/libkern.h>
 +#include <sys/param.h>
 +#include <sys/types.h>
@@ -461,7 +462,6 @@ diff -N kern/zones.c
 +{
 +	struct entry *np;
 +	if (zone == GLOBAL) {
-+		printf("global zone\n");
 +		return 0;
 +	}
 +	printf("exiting like uhh yeet pid:%d: zone:%d:\n", pid, zone);
@@ -548,7 +548,7 @@ diff -N kern/zones.c
 +		if (nzsOutput >= *nzsInput) {
 +#ifdef DLIST
 +			printf("nzs is less than number of zones \
-+			    number of zones:%d, nzs:%zu\n", nzsOutput, *nzsInput);
++			    number of zones:%zu, nzs:%zu\n", nzsOutput, *nzsInput);
 +#endif
 +			*retval = -1;
 +			return ERANGE;
@@ -564,7 +564,7 @@ diff -N kern/zones.c
 +			printf("namejeff\n");
 +			zsOutput[nzsOutput] = np->id;
 +#ifdef DLIST
-+			printf("Adding %d\n", nzsOutput);
++			printf("Adding %zu\n", nzsOutput);
 +#endif
 +			nzsOutput++;
 +		}
@@ -578,8 +578,6 @@ diff -N kern/zones.c
 +		*retval = -1;
 +		return EFAULT;
 +	}
-+	printf("copying out nzsOuptut: %zu\n", nzsOutput);
-+	printf("current zone: %d\n", p->p_p->zone);
 +	if (copyout(&nzsOutput, SCARG(uap, nzs), sizeof(size_t))){
 +#ifdef DLIST
 +		printf("copyout failed in zone_list2\n");
@@ -595,6 +593,7 @@ diff -N kern/zones.c
 +int
 +zone_name(zoneid_t z, char *name, size_t namelen)
 +{
++	printf("uhhh\n");
 +	zoneid_t zoneID = z;
 +	struct entry *np;
 +	TAILQ_FOREACH(np, &zones, entries) {
@@ -618,6 +617,7 @@ diff -N kern/zones.c
 +sys_zone_name(struct proc *p, void *v, register_t *retval)
 +{
 +	/* TODO -1 if current zone, non-global zones */
++	printf("in zone_name\n");
 +	int error;
 +	zoneid_t zoneID;
 +	size_t namelen;
@@ -689,6 +689,10 @@ diff -N kern/zones.c
 +	struct sys_zone_lookup_args /* {
 +		syscallarg(const char *) name;
 +	} */ 	*uap = v;
++	if (SCARG(uap, name) == NULL) {
++		*retval = p->p_p->zone;
++		return 0;
++	}
 +	char *name;
 +	if ((name = malloc(sizeof(char) * MAXZONENAMELEN + 1, 
 +	    M_TEMP, M_WAITOK | M_CANFAIL | M_ZERO)) == NULL) {
@@ -715,7 +719,7 @@ diff -N kern/zones.c
 +	printf("name given:%s.\n", name);
 +#endif
 +	if (!strcmp(name, "global")) {
-+		*retval = np->id;
++		*retval = 0;
 +		return 0;
 +	}
 +	TAILQ_FOREACH(np, &zones, entries) {
@@ -735,7 +739,7 @@ RCS file: /cvs/src/sys/sys/_types.h,v
 retrieving revision 1.9
 diff -u -p -u -p -r1.9 _types.h
 --- sys/_types.h	22 Aug 2014 23:05:15 -0000	1.9
-+++ sys/_types.h	21 Oct 2019 01:24:53 -0000
++++ sys/_types.h	22 Oct 2019 06:50:42 -0000
 @@ -64,6 +64,7 @@ typedef	__int32_t	__swblk_t;	/* swap off
  typedef	__int64_t	__time_t;	/* epoch time */
  typedef	__int32_t	__timer_t;	/* POSIX timer identifiers */
@@ -749,7 +753,7 @@ Index: sys/_zones.h
 RCS file: sys/_zones.h
 diff -N sys/_zones.h
 --- /dev/null	1 Jan 1970 00:00:00 -0000
-+++ sys/_zones.h	21 Oct 2019 01:24:53 -0000
++++ sys/_zones.h	22 Oct 2019 06:50:42 -0000
 @@ -0,0 +1,13 @@
 +#ifndef _ZONES_H
 +#define _ZONES_H
@@ -770,7 +774,7 @@ RCS file: /cvs/src/sys/sys/proc.h,v
 retrieving revision 1.273
 diff -u -p -u -p -r1.273 proc.h
 --- sys/proc.h	2 Aug 2019 02:17:35 -0000	1.273
-+++ sys/proc.h	21 Oct 2019 01:24:53 -0000
++++ sys/proc.h	22 Oct 2019 06:50:42 -0000
 @@ -51,6 +51,7 @@
  #include <sys/rwlock.h>			/* For struct rwlock */
  #include <sys/sigio.h>			/* For struct sigio */
@@ -793,7 +797,7 @@ RCS file: /cvs/src/sys/sys/syscall.h,v
 retrieving revision 1.205
 diff -u -p -u -p -r1.205 syscall.h
 --- sys/syscall.h	13 Aug 2019 07:10:31 -0000	1.205
-+++ sys/syscall.h	21 Oct 2019 01:24:53 -0000
++++ sys/syscall.h	22 Oct 2019 06:50:42 -0000
 @@ -1,4 +1,4 @@
 -/*	$OpenBSD: syscall.h,v 1.205 2019/08/13 07:10:31 anton Exp $	*/
 +/*	$OpenBSD$	*/
@@ -830,7 +834,7 @@ RCS file: /cvs/src/sys/sys/syscallargs.h,v
 retrieving revision 1.208
 diff -u -p -u -p -r1.208 syscallargs.h
 --- sys/syscallargs.h	13 Aug 2019 07:10:31 -0000	1.208
-+++ sys/syscallargs.h	21 Oct 2019 01:24:53 -0000
++++ sys/syscallargs.h	22 Oct 2019 06:50:42 -0000
 @@ -1,4 +1,4 @@
 -/*	$OpenBSD: syscallargs.h,v 1.208 2019/08/13 07:10:31 anton Exp $	*/
 +/*	$OpenBSD$	*/
@@ -887,7 +891,7 @@ RCS file: /cvs/src/sys/sys/sysctl.h,v
 retrieving revision 1.195
 diff -u -p -u -p -r1.195 sysctl.h
 --- sys/sysctl.h	21 Aug 2019 20:44:09 -0000	1.195
-+++ sys/sysctl.h	21 Oct 2019 01:24:53 -0000
++++ sys/sysctl.h	22 Oct 2019 06:50:42 -0000
 @@ -472,6 +472,7 @@ struct kinfo_proc {
  	u_int32_t p_rtableid;		/* U_INT: Routing table identifier. */
  
@@ -896,13 +900,21 @@ diff -u -p -u -p -r1.195 sysctl.h
  };
  
  /*
+@@ -629,6 +630,7 @@ do {									\
+ 	strlcpy((kp)->p_comm, (pr)->ps_comm, sizeof((kp)->p_comm));	\
+ 	strlcpy((kp)->p_login, (sess)->s_login,			\
+ 	    MIN(sizeof((kp)->p_login), sizeof((sess)->s_login)));	\
++	(kp)->p_zoneid = (pr)->zone;					\
+ 									\
+ 	if ((sess)->s_ttyvp)						\
+ 		(kp)->p_eflag |= EPROC_CTTY;				\
 Index: sys/types.h
 ===================================================================
 RCS file: /cvs/src/sys/sys/types.h,v
 retrieving revision 1.48
 diff -u -p -u -p -r1.48 types.h
 --- sys/types.h	9 Feb 2019 04:54:11 -0000	1.48
-+++ sys/types.h	21 Oct 2019 01:24:53 -0000
++++ sys/types.h	22 Oct 2019 06:50:42 -0000
 @@ -146,6 +146,7 @@ typedef	__rlim_t	rlim_t;		/* resource li
  typedef	__segsz_t	segsz_t;	/* segment size */
  typedef	__swblk_t	swblk_t;	/* swap offset */
@@ -916,7 +928,7 @@ Index: sys/zones.h
 RCS file: sys/zones.h
 diff -N sys/zones.h
 --- /dev/null	1 Jan 1970 00:00:00 -0000
-+++ sys/zones.h	21 Oct 2019 01:24:53 -0000
++++ sys/zones.h	22 Oct 2019 06:50:42 -0000
 @@ -0,0 +1,29 @@
 +/*	$OpenBSD$ */
 +
