@@ -12,6 +12,7 @@ $ mkdir usr.sbin/zone
 $ patch < /path/to/zones.diff
 Hmm...  Looks like a unified diff to me...
 ```
+Note that you must be in an OpenBSD environment to run this project.
 
 ## Interfaces
 ### zone_create
